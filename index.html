@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#151316">
+  <title>MafiaMerge | The Empire of Ashes</title>
+  <link rel="stylesheet" href="styles/main.css">
+  <link rel="stylesheet" href="styles/merge.css">
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+</head>
+<body>
+  <div id="game-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">M</span><div><b>MAFIAMERGE</b><small>THE EMPIRE OF ASHES</small></div></div>
+      <div class="stats">
+        <div class="stat"><span>ENERGY</span><b id="energy-value">200 / 200</b><div class="meter"><i id="energy-fill"></i></div></div>
+        <div class="stat"><span>CASH</span><b id="cash-value">$1,500</b></div>
+        <button class="gift-top" id="open-gifts">🎁 <span>GIFTS</span><em id="gift-count">3</em></button>
+      </div>
+    </header>
+
+    <main>
+      <section id="city-screen" class="screen active">
+        <div class="city-heading"><div><p class="eyebrow">BELLAVITA • DISTRICT 01</p><h1>THE CITY IS YOURS<br><i>TO RECLAIM.</i></h1><p class="subline">Build your businesses. Earn loyalty. Rebuild the empire.</p></div>
+          <button class="primary" id="enter-business">ENTER BUSINESSES</button></div>
+        <div class="scene-wrap"><canvas id="renderCanvas"></canvas>
+          <div class="scene-vignette"></div><div class="scene-label"><b>OLD QUARTER</b><span>YOUR TERRITORY • UNDER DEVELOPMENT</span></div>
+          <div class="mobile-controls"><div id="joystick" class="joystick"><div id="stick" class="stick"></div></div><div class="control-buttons"><button id="interact-btn">INTERACT</button><button id="sprint-btn">SPRINT</button></div></div>
+          <div id="scene-message" class="scene-message">Welcome back. The city remembers your family.</div>
+        </div>
+        <div class="city-actions"><button class="tile" data-panel="dessert"><span>01</span><b>DESSERT HOUSE</b><small>Chocolates • Cakes • Pastries • Drinks</small></button><button class="tile" data-panel="weapons"><span>02</span><b>ARMORY</b><small>Fictional inventory • Collection • Orders</small></button><button class="tile" data-panel="story"><span>03</span><b>THE STORY</b><small>Discover what happened to your family</small></button></div>
+      </section>
+
+      <section id="business-screen" class="screen">
+        <div class="section-head"><button class="back" id="back-city">← CITY</button><div><p class="eyebrow">YOUR ENTERPRISES</p><h2 id="business-title">DESSERT HOUSE</h2></div><button class="gift-small" id="open-gifts-2">🎁 GIFTS</button></div>
+        <nav class="tabs"><button class="tab selected" data-tab="dessert">DESSERT HOUSE</button><button class="tab" data-tab="weapons">ARMORY</button></nav>
+        <div class="business-layout">
+          <div class="board-panel"><div class="board-title"><div><b id="board-name">DESSERT MERGE BOARD</b><small>Merge matching items to discover the next tier</small></div><span id="board-energy">⚡ 5 ENERGY / MOVE</span></div>
+            <div id="merge-board" class="merge-board" aria-label="Merge board"></div>
+            <div class="board-actions"><button id="make-order" class="primary">FULFIL ORDER</button><button id="refresh-board" class="secondary">REFRESH BOARD</button></div>
+          </div>
+          <aside class="side-panel"><div class="panel-card"><p class="eyebrow">CURRENT ORDER</p><h3 id="order-name">Chocolate Truffle Box</h3><p id="order-desc">Prepare the requested item and fulfil the order.</p><div class="reward-line"><b id="order-reward">$120</b><span>ORDER REWARD</span></div></div>
+            <div class="panel-card"><p class="eyebrow">DISCOVERIES</p><div id="collection-list" class="collection-list"></div></div>
+            <div class="panel-card"><p class="eyebrow">HOW TO PLAY</p><p class="help">Tap one item, then tap an adjacent matching item. The two merge into the next level. Every move costs energy. Open gifts for extra energy, cash and surprise items.</p></div></aside>
+        </div>
+      </section>
+
+      <section id="story-screen" class="screen">
+        <button class="back" id="story-back">← CITY</button><p class="eyebrow">CHAPTER 01 • THE RETURN</p><h2>A LETTER FROM THE PAST</h2><div class="story-card"><p>Years ago, your family's empire fell in a single night. Someone close to your father opened the gates to your enemies.</p><p>Now, a sealed envelope has arrived. Inside: an old warehouse key, a photograph, and five words.</p><blockquote>“What was taken can be rebuilt.”</blockquote><p>Your first step is small. Reopen the businesses. Earn the district's trust. Find out who betrayed your family.</p><button class="primary" id="story-continue">BEGIN REBUILDING</button></div>
+      </section>
+    </main>
+    <div id="toast" class="toast"></div>
+    <div id="gift-modal" class="modal hidden"><div class="modal-card"><button class="close" id="close-gifts">×</button><p class="eyebrow">A LITTLE SOMETHING FOR YOU</p><h2>GIFT VAULT</h2><p class="gift-intro">Claim rewards as you build your empire.</p><div id="gift-list" class="gift-list"></div><button class="primary wide" id="claim-gift">CLAIM SELECTED GIFT</button></div></div>
+  </div>
+  <script src="scripts/game-data.js"></script><script src="scripts/game.js"></script><script src="scripts/city.js"></script>
+</body></html>
