@@ -68,23 +68,26 @@
       <div class="business-layout">
         <div class="board-panel">
           <div class="board-title">
-            <div><b id="board-name">DESSERT MERGE BOARD</b><small>Drag matching items together to merge them</small></div>
-            <span id="board-energy">⚡ 5 ENERGY / MOVE</span>
+            <div>
+              <b id="board-name">DESSERT MERGE BOARD</b>
+              <small>Merge matching items for free. Use energy to produce new items.</small>
+            </div>
+            <span id="board-energy">⚡ GENERATOR</span>
           </div>
+
           <div id="merge-board" class="merge-board"></div>
+
           <div class="board-actions">
             <button id="refresh-board" class="secondary">REFRESH BOARD</button>
           </div>
         </div>
 
         <aside class="side-panel">
+
           <div class="panel-card">
-            <p class="eyebrow">CUSTOMER ORDER</p>
-            <div id="customer-card" class="customer-card"></div>
-            <h3 id="order-name">Customer order</h3>
-            <p id="order-desc">Complete this customer's request.</p>
-            <div class="reward-line"><b id="order-reward">0 coins</b><span>REWARD</span></div>
-            <button id="make-order" class="primary wide">COMPLETE ORDER</button>
+            <p class="eyebrow">CUSTOMER ORDERS</p>
+            <p class="help">Complete any order whenever you have the requested item. Ready orders will be highlighted.</p>
+            <div id="orders-list" class="orders-list"></div>
           </div>
 
           <div class="panel-card">
@@ -99,7 +102,11 @@
 
           <div class="panel-card">
             <p class="eyebrow">HOW TO PLAY</p>
-            <p class="help">Press and hold an item, drag it onto an identical item, then release. Drag items into empty spaces to rearrange them.</p>
+            <p class="help">
+              Drag matching items together to merge them. Merging costs no energy.
+              Tap your generator to spend energy and produce new items.
+              Tap a gift box on the board to begin its opening countdown.
+            </p>
           </div>
         </aside>
       </div>
@@ -128,9 +135,9 @@
       <button class="close" id="close-gifts">×</button>
       <p class="eyebrow">YOUR REWARDS</p>
       <h2>GIFT VAULT</h2>
-      <p class="gift-intro">Some visitors bring more than orders.</p>
+      <p class="gift-intro">Claim a gift to place its box on your merge board.</p>
       <div id="gift-list" class="gift-list"></div>
-      <button class="primary wide" id="claim-gift">CLAIM SELECTED GIFT</button>
+      <button class="primary wide" id="claim-gift">PLACE GIFT ON BOARD</button>
     </div>
   </div>
 
