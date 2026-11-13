@@ -25,14 +25,28 @@
     {id:"vip",name:"VIP Gift",icon:"💝",desc:"A rare visitor's generous gift.",energy:100,coins:2500,gems:50}
   ];
 
+  const GENERATOR_ID = "board-generator";
+  const GENERATOR_COST = 5;
+  const GENERATOR_MAX_CHARGES = 5;
+  const GENERATOR_RECHARGE_MS = 30000;
+  const GIFT_OPEN_MS = 10000;
+
   const state = {
     energy:200,maxEnergy:200,coins:1500,gems:50,
-    active:"dessert",board:[],order:null,
+    active:"dessert",
+    boards:{dessert:[],weapons:[]},
+    board:[],
+    orders:{dessert:[],weapons:[]},
     discoveries:{dessert:[],weapons:[]},
-    giftList:[],claimed:[],
-    customerVisits:{},currentCustomer:null,
-    selectedGift:null
+    giftList:[],
+    customerVisits:{},
+    selectedGift:null,
+    nextOrderId:1,
+    nextGiftId:1
   };
+
+  let touchSource = null;
+  let pointerStart = null;
 
   function toast(message){
     const el=$("toast");
@@ -42,22 +56,57 @@
   }
 
   function save(){
-    localStorage.setItem("mafiamerge-save-v2",JSON.stringify(state));
+    state.board = state.boards[state.active];
+    localStorage.setItem("mafiamerge-save-v3",JSON.stringify(state));
   }
 
   function load(){
     try{
-      const saved=JSON.parse(localStorage.getItem("mafiamerge-save-v2"));
+      let saved=JSON.parse(localStorage.getItem("mafiamerge-save-v3"));
+
+      // Migrate the previous save version if necessary.
+      if(!saved){
+        const old=JSON.parse(localStorage.getItem("mafiamerge-save-v2"));
+        if(old){
+          saved=old;
+          saved.boards={dessert:old.board||[],weapons:[]};
+          saved.orders={dessert:[],weapons:[]};
+        }
+      }
+
       if(saved) Object.assign(state,saved);
-    }catch(e){}
+    }catch(e){
+      console.warn("Save could not be loaded.",e);
+    }
+
+    if(!state.boards)state.boards={dessert:[],weapons:[]};
+    if(!state.orders)state.orders={dessert:[],weapons:[]};
+    if(!state.discoveries)state.discoveries={dessert:[],weapons:[]};
+    if(!state.giftList)state.giftList=[];
+    if(!state.customerVisits)state.customerVisits={};
+    if(!state.nextOrderId)state.nextOrderId=1;
+    if(!state.nextGiftId)state.nextGiftId=1;
   }
 
-  function catalog(){return data[state.active];}
-  function getItem(id){return catalog().items.find(x=>x.id===id);}
+  function catalog(){
+    return data[state.active];
+  }
+
+  function getItem(id){
+    return catalog().items.find(x=>x.id===id);
+  }
+
+  function board(){
+    return state.boards[state.active];
+  }
+
+  function emptyBoard(){
+    return Array(25).fill(null);
+  }
 
   function updateStats(){
-    $("energy-value").textContent=state.energy+" / 200";
-    $("energy-fill").style.width=(state.energy/200*100)+"%";
+    $("energy-value").textContent=state.energy+" / "+state.maxEnergy;
+    $("energy-fill").style.width=(state.energy/state.maxEnergy*100)+"%";
     $("cash-value").textContent=state.coins.toLocaleString();
     $("gem-value").textContent="💎 "+state.gems;
     $("gift-count").textContent=state.giftList.length;
@@ -65,8 +114,13 @@
 
   function addGift(id){
     const gift=gifts.find(g=>g.id===id);
-    if(!gift || state.giftList.some(g=>g.id===id) || state.claimed.includes(id)) return;
-    state.giftList.push({...gift});
+    if(!gift)return;
+
+    state.giftList.push({
+      ...gift,
+      uid:"gift-"+(state.nextGiftId++)
+    });
+
     updateStats();
     save();
   }
@@ -74,81 +128,273 @@
   function nextItem(id){
     const current=getItem(id);
     if(!current)return null;
-    return catalog().items.find(x=>x.family===current.family && x.tier===current.tier+1);
+
+    return catalog().items.find(x=>
+      x.family===current.family &&
+      x.tier===current.tier+1
+    );
+  }
+
+  function starterItem(){
+    const starters=catalog().starter;
+    return starters[Math.floor(Math.random()*starters.length)];
   }
 
   function buildBoard(){
     const starters=catalog().starter;
-    state.board=Array(25).fill(null);
+    const current=state.boards[state.active];
+
+    if(Array.isArray(current)&&current.length===25){
+      renderBoard();
+      return;
+    }
+
+    const fresh=emptyBoard();
     const positions=[0,1,3,4,6,7,10,11,13,14,16,17];
-    positions.forEach((p,i)=>state.board[p]=starters[i%starters.length]);
+
+    positions.forEach((p,i)=>{
+      fresh[p]=starters[i%starters.length];
+    });
+
+    // The generator occupies its own board space.
+    fresh[24]={
+      type:"generator",
+      charges:GENERATOR_MAX_CHARGES,
+      readyAt:0
+    };
+
+    state.boards[state.active]=fresh;
     renderBoard();
     save();
   }
 
+  function findEmptyCell(){
+    return board().findIndex(cell=>cell===null);
+  }
+
+  function spawnItem(id){
+    const empty=findEmptyCell();
+
+    if(empty<0){
+      toast("Your board is full. Make some space first.");
+      return false;
+    }
+
+    board()[empty]=id;
+
+    if(!state.discoveries[state.active].includes(id)){
+      state.discoveries[state.active].push(id);
+      const item=getItem(id);
+      if(item)toast("New discovery: "+item.name);
+    }
+
+    return true;
+  }
+
   function renderBoard(){
-    const board=$("merge-board");
-    board.innerHTML="";
-    state.board.forEach((id,index)=>{
-      const cell=document.createElement("div");
-      cell.className="merge-cell"+(id?"":" empty");
-      cell.dataset.index=index;
-      if(id){
-        const item=getItem(id);
-        cell.innerHTML=`<span class="item-icon">${item.icon}</span><span class="item-name">${item.name}</span>`;
-        cell.draggable=true;
-        cell.addEventListener("dragstart",e=>{
-          e.dataTransfer.setData("text/plain",String(index));
-          cell.classList.add("dragging");
-        });
-        cell.addEventListener("dragend",()=>cell.classList.remove("dragging"));
+    const el=$("merge-board");
+    if(!el)return;
+
+    el.innerHTML="";
+
+    board().forEach((cell,index)=>{
+      const node=document.createElement("div");
+      node.className="merge-cell"+(!cell?" empty":"");
+      node.dataset.index=index;
+
+      if(typeof cell==="string"){
+        const item=getItem(cell);
+
+        if(item){
+          node.innerHTML=
+            `<span class="item-icon">${item.icon}</span>
+             <span class="item-name">${item.name}</span>`;
+          node.draggable=true;
+          node.addEventListener("dragstart",e=>{
+            e.dataTransfer.setData("text/plain",String(index));
+            node.classList.add("dragging");
+          });
+          node.addEventListener("dragend",()=>node.classList.remove("dragging"));
+        }
       }
-      cell.addEventListener("dragover",e=>e.preventDefault());
-      cell.addEventListener("drop",e=>{
+
+      if(cell&&typeof cell==="object"&&cell.type==="generator"){
+        const cooling=cell.readyAt>Date.now();
+        const remaining=Math.max(0,Math.ceil((cell.readyAt-Date.now())/1000));
+
+        node.classList.add("generator-cell");
+        node.innerHTML=
+          `<span class="item-icon">🏭</span>
+           <span class="item-name">ITEM GENERATOR</span>
+           <span class="generator-charge">${cooling?remaining+"s":cell.charges+" charges"}</span>`;
+      }
+
+      if(cell&&typeof cell==="object"&&cell.type==="gift"){
+        const opening=cell.openingUntil>Date.now();
+        const remaining=Math.max(0,Math.ceil((cell.openingUntil-Date.now())/1000));
+
+        node.classList.add("gift-board-cell");
+        if(opening)node.classList.add("gift-opening");
+
+        node.innerHTML=
+          `<span class="item-icon">${opening?"⏳":cell.icon}</span>
+           <span class="item-name">${opening?"OPENING...":cell.name}</span>
+           <span class="gift-timer">${opening?remaining+"s":"TAP TO OPEN"}</span>`;
+      }
+
+      node.addEventListener("dragover",e=>e.preventDefault());
+      node.addEventListener("drop",e=>{
         e.preventDefault();
         const from=Number(e.dataTransfer.getData("text/plain"));
         moveItem(from,index);
       });
-      addTouchDragging(cell,index);
-      board.appendChild(cell);
+
+      node.addEventListener("pointerdown",e=>{
+        if(!cell||typeof cell!=="string")return;
+        touchSource=index;
+        pointerStart={x:e.clientX,y:e.clientY};
+        node.classList.add("dragging");
+      });
+
+      node.addEventListener("pointerup",e=>{
+        if(touchSource===null)return;
+
+        const from=touchSource;
+        const start=pointerStart;
+        touchSource=null;
+        pointerStart=null;
+
+        const target=document.elementFromPoint(e.clientX,e.clientY);
+        const destination=target?.closest(".merge-cell");
+        const to=destination?Number(destination.dataset.index):from;
+
+        node.classList.remove("dragging");
+
+        if(start&&Math.abs(e.clientX-start.x)+Math.abs(e.clientY-start.y)<12){
+          if(to===from)activateBoardCell(from);
+          return;
+        }
+
+        moveItem(from,to);
+      });
+
+      node.addEventListener("pointercancel",()=>{
+        touchSource=null;
+        pointerStart=null;
+        node.classList.remove("dragging");
+      });
+
+      node.addEventListener("click",()=>{
+        if(cell&&typeof cell==="object")activateBoardCell(index);
+      });
+
+      el.appendChild(node);
     });
+
+    renderOrders();
+    updateGeneratorLabel();
   }
 
-  let touchSource=null;
+  function activateBoardCell(index){
+    const cell=board()[index];
+    if(!cell||typeof cell!=="object")return;
 
-  function addTouchDragging(cell,index){
-    cell.addEventListener("pointerdown",e=>{
-      if(!state.board[index])return;
-      touchSource=index;
-      cell.setPointerCapture(e.pointerId);
-      cell.classList.add("dragging");
-    });
+    if(cell.type==="generator"){
+      useGenerator(index);
+    }else if(cell.type==="gift"){
+      openGiftBox(index);
+    }
+  }
 
-    cell.addEventListener("pointerup",e=>{
-      if(touchSource===null)return;
-      const target=document.elementFromPoint(e.clientX,e.clientY);
-      const destination=target?.closest(".merge-cell");
-      const targetIndex=destination?Number(destination.dataset.index):touchSource;
-      moveItem(touchSource,targetIndex);
-      touchSource=null;
-    });
+  function updateGeneratorLabel(){
+    const generator=board().find(x=>
+      x&&typeof x==="object"&&x.type==="generator"
+    );
 
-    cell.addEventListener("pointercancel",()=>{
-      touchSource=null;
-      cell.classList.remove("dragging");
-    });
+    if(!generator){
+      $("board-energy").textContent="⚡ GENERATOR";
+      return;
+    }
+
+    const remaining=Math.max(0,Math.ceil((generator.readyAt-Date.now())/1000));
+
+    $("board-energy").textContent=
+      remaining>0
+      ?"⚡ RECHARGING "+remaining+"s"
+      :"⚡ "+generator.charges+" GENERATOR CHARGES";
+  }
+
+  function useGenerator(index){
+    const machine=board()[index];
+    if(!machine||machine.type!=="generator")return;
+
+    if(machine.readyAt>Date.now()){
+      toast("Your generator is recharging.");
+      return;
+    }
+
+    if(machine.charges<=0){
+      machine.readyAt=Date.now()+GENERATOR_RECHARGE_MS;
+      machine.charges=GENERATOR_MAX_CHARGES;
+      toast("Generator recharging. Please wait.");
+      renderBoard();
+      save();
+      return;
+    }
+
+    if(state.energy<GENERATOR_COST){
+      toast("Not enough energy to produce an item.");
+      return;
+    }
+
+    if(findEmptyCell()<0){
+      toast("Your board is full. Make space before producing items.");
+      return;
+    }
+
+    state.energy-=GENERATOR_COST;
+    machine.charges--;
+
+    const id=starterItem();
+    spawnItem(id);
+
+    if(machine.charges===0){
+      machine.readyAt=Date.now()+GENERATOR_RECHARGE_MS;
+      toast("Generator empty. It will recharge shortly.");
+    }else{
+      toast("New item produced!");
+    }
+
+    updateStats();
+    renderBoard();
+    updateCollection();
+    save();
   }
 
   function moveItem(from,to){
-    if(from===to || !Number.isInteger(from) || !Number.isInteger(to))return;
-    const first=state.board[from],second=state.board[to];
-    if(!first)return;
+    if(from===to||!Number.isInteger(from)||!Number.isInteger(to))return;
 
-    if(!second){
-      state.board[to]=first;
-      state.board[from]=null;
+    const cells=board();
+    const first=cells[from];
+    const second=cells[to];
+
+    if(!first||typeof first!=="string"){
+      toast("That item cannot be moved.");
+      renderBoard();
+      return;
+    }
+
+    if(second===null){
+      cells[to]=first;
+      cells[from]=null;
       renderBoard();
       save();
+      return;
+    }
+
+    if(typeof second!=="string"){
+      toast("That space is occupied.");
+      renderBoard();
       return;
     }
 
@@ -158,20 +404,16 @@
       return;
     }
 
-    if(state.energy<catalog().cost){
-      toast("Not enough energy. Open your gifts.");
-      return;
-    }
-
+    // Merging is free. Energy is not deducted here.
     const upgraded=nextItem(first);
+
     if(!upgraded){
       toast("This item has reached its highest level.");
       return;
     }
 
-    state.energy-=catalog().cost;
-    state.board[from]=null;
-    state.board[to]=upgraded.id;
+    cells[from]=null;
+    cells[to]=upgraded.id;
 
     if(!state.discoveries[state.active].includes(upgraded.id)){
       state.discoveries[state.active].push(upgraded.id);
@@ -179,84 +421,186 @@
     }
 
     renderBoard();
-    updateStats();
     updateCollection();
     save();
   }
 
-  function chooseCustomer(){
-    const pool=customers.filter(c=>c.business===state.active);
-    const customer=pool[Math.floor(Math.random()*pool.length)];
-    state.currentCustomer=customer.id;
-    state.customerVisits[customer.id]=(state.customerVisits[customer.id]||0)+1;
+  function createOrder(customer){
+    const pool=catalog().orderPool;
+    const choice=pool[Math.floor(Math.random()*pool.length)];
 
-    const orders=catalog().orderPool;
-    const order=orders[Math.floor(Math.random()*orders.length)];
-    state.order={id:order[0],reward:order[1],desc:order[2]};
+    const order={
+      uid:state.nextOrderId++,
+      customerId:customer.id,
+      id:choice[0],
+      reward:choice[1],
+      desc:choice[2],
+      createdAt:Date.now()
+    };
 
-    if(customer.special && Math.random()<0.35){
-      const giftId=customer.id==="don"?"gold":"vip";
-      addGift(giftId);
-      toast(customer.name+" has brought you a special gift!");
-    }
-    renderCustomer();
-    renderCustomerList();
-    renderOrder();
+    state.orders[state.active].push(order);
+    return order;
   }
 
-  function renderCustomer(){
-    const customer=customers.find(c=>c.id===state.currentCustomer);
-    if(!customer)return;
-    $("customer-card").innerHTML=
-      `<div class="customer-avatar">${customer.portrait}</div>
-       <div><b>${customer.name}</b><small>${customer.role}</small>
-       <p>"${customer.dialogue}"</p></div>`;
+  function createInitialOrders(){
+    const existing=state.orders[state.active];
+
+    if(existing.length)return;
+
+    const pool=customers.filter(c=>c.business===state.active);
+
+    pool.slice(0,3).forEach(customer=>{
+      state.customerVisits[customer.id]=(state.customerVisits[customer.id]||0)+1;
+      createOrder(customer);
+
+      if(customer.special&&Math.random()<0.25){
+        addGift(customer.id==="don"?"gold":"vip");
+        toast(customer.name+" has brought you a special gift!");
+      }
+    });
+  }
+
+  function addReplacementOrder(customer){
+    state.customerVisits[customer.id]=(state.customerVisits[customer.id]||0)+1;
+    createOrder(customer);
+
+    if(customer.special&&Math.random()<0.35){
+      addGift(customer.id==="don"?"gold":"vip");
+      toast(customer.name+" has brought you a special gift!");
+    }
+  }
+
+  function renderOrders(){
+    const el=$("orders-list");
+    if(!el)return;
+
+    el.innerHTML="";
+
+    const orders=state.orders[state.active]||[];
+
+    if(!orders.length){
+      el.textContent="No active orders.";
+      return;
+    }
+
+    orders.forEach(order=>{
+      const customer=customers.find(c=>c.id===order.customerId);
+      const item=getItem(order.id);
+      const ready=board().includes(order.id);
+
+      const card=document.createElement("div");
+      card.className="order-card"+(ready?" order-ready":"");
+
+      card.innerHTML=
+        `<div class="order-customer">
+          <span class="customer-avatar small">${customer?customer.portrait:"?"}</span>
+          <span><b>${customer?customer.name:"Customer"}</b>
+          <small>${customer?customer.role:"Visitor"}</small></span>
+        </div>
+        <div class="order-details">
+          <b>${item?item.icon+" "+item.name:"Requested item"}</b>
+          <p>${order.desc}</p>
+          <span class="order-reward">🪙 ${order.reward} coins</span>
+        </div>
+        <button class="primary wide serve-order" ${ready?"":"disabled"} data-order="${order.uid}">
+          ${ready?"SERVE CUSTOMER":"ITEM NOT READY"}
+        </button>
+        ${ready?'<div class="ready-label">✦ ORDER READY ✦</div>':""}`;
+
+      el.appendChild(card);
+    });
+
+    el.querySelectorAll(".serve-order").forEach(button=>{
+      button.addEventListener("click",()=>{
+        serveOrder(Number(button.dataset.order));
+      });
+    });
+  }
+
+  function serveOrder(uid){
+    const orders=state.orders[state.active];
+    const index=orders.findIndex(o=>o.uid===uid);
+
+    if(index<0)return;
+
+    const order=orders[index];
+    const itemIndex=board().indexOf(order.id);
+
+    if(itemIndex<0){
+      toast("The requested item is not ready yet.");
+      return;
+    }
+
+    const customer=customers.find(c=>c.id===order.customerId);
+
+    board()[itemIndex]=null;
+    state.coins+=order.reward;
+    orders.splice(index,1);
+
+    toast("Order completed for "+customer.name+"! +"+order.reward+" coins");
+
+    addReplacementOrder(customer);
+
+    renderBoard();
+    renderCustomerList();
+    updateStats();
+    save();
   }
 
   function renderCustomerList(){
     const el=$("customer-list");
     el.innerHTML="";
+
     customers.filter(c=>c.business===state.active).forEach(c=>{
       const visits=state.customerVisits[c.id]||0;
       const row=document.createElement("div");
       row.className="customer-row";
-      row.innerHTML=`<span class="customer-avatar small">${c.portrait}</span>
-        <span><b>${c.name}</b><small>${c.role} • ${visits} visits</small></span>`;
+
+      row.innerHTML=
+        `<span class="customer-avatar small">${c.portrait}</span>
+         <span><b>${c.name}</b>
+         <small>${c.role} • ${visits} visits</small></span>`;
+
       el.appendChild(row);
     });
-  }
-
-  function renderOrder(){
-    if(!state.order)return;
-    const item=getItem(state.order.id);
-    $("order-name").textContent=item?item.name:"Customer request";
-    $("order-desc").textContent=state.order.desc;
-    $("order-reward").textContent=state.order.reward+" coins";
   }
 
   function updateCollection(){
     const el=$("collection-list");
     el.innerHTML="";
+
     state.discoveries[state.active].forEach(id=>{
       const item=getItem(id);
       if(!item)return;
+
       const chip=document.createElement("span");
       chip.className="collection-chip discovered";
       chip.textContent=item.icon+" "+item.name;
       el.appendChild(chip);
     });
-    if(!el.children.length)el.textContent="Your discoveries will appear here.";
+
+    if(!el.children.length){
+      el.textContent="Your discoveries will appear here.";
+    }
   }
 
   function switchBusiness(name){
     state.active=name;
-    document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("selected",t.dataset.tab===name));
+
+    document.querySelectorAll(".tab").forEach(t=>
+      t.classList.toggle("selected",t.dataset.tab===name)
+    );
+
     $("business-title").textContent=catalog().title;
     $("board-name").textContent=catalog().board;
-    $("board-energy").textContent="⚡ "+catalog().cost+" ENERGY / MERGE";
+
     buildBoard();
-    chooseCustomer();
+    createInitialOrders();
+    renderBoard();
+    renderCustomerList();
     updateCollection();
+    updateStats();
+    save();
   }
 
   function openBusiness(name){
@@ -266,19 +610,115 @@
     $("business-screen").classList.add("active");
   }
 
-  function fulfilOrder(){
-    if(!state.order)return;
-    const index=state.board.indexOf(state.order.id);
+  function refreshBoard(){
+    toast("Use your generator to produce items. Merging is free.");
+  }
+
+  function renderGifts(){
+    const el=$("gift-list");
+    el.innerHTML="";
+
+    state.giftList.forEach(g=>{
+      const button=document.createElement("button");
+      button.className="gift-option"+(state.selectedGift===g.uid?" selected":"");
+
+      button.innerHTML=
+        `<span class="gift-icon">${g.icon}</span>
+         <span><b>${g.name}</b><small>${g.desc}</small></span>`;
+
+      button.onclick=()=>{
+        state.selectedGift=g.uid;
+        renderGifts();
+      };
+
+      el.appendChild(button);
+    });
+
+    if(!state.giftList.length){
+      el.textContent="No gifts waiting. More visitors may bring surprises.";
+    }
+  }
+
+  function claimGift(){
+    const index=state.giftList.findIndex(g=>g.uid===state.selectedGift);
+
     if(index<0){
-      toast("Create the requested item on the board first.");
+      toast("Choose a gift first.");
       return;
     }
 
-    const reward=state.order.reward;
-    state.board[index]=null;
-    state.coins+=reward;
+    const empty=findEmptyCell();
 
-    const customer=customers.find(c=>c.id===state.currentCustomer);
+    if(empty<0){
+      toast("Your board is full. Make space before placing a gift.");
+      return;
+    }
+
+    const gift=state.giftList.splice(index,1)[0];
+
+    board()[empty]={
+      type:"gift",
+      uid:gift.uid,
+      giftId:gift.id,
+      name:gift.name,
+      icon:gift.icon,
+      energy:gift.energy||0,
+      coins:gift.coins||0,
+      gems:gift.gems||0,
+      openingUntil:0
+    };
+
+    state.selectedGift=null;
+
+    $("gift-modal").classList.add("hidden");
+
+    updateStats();
+    renderBoard();
+    renderGifts();
+    save();
+
+    toast("Gift placed on your board. Tap the box to open it.");
+  }
+
+  function openGiftBox(index){
+    const gift=board()[index];
+
+    if(!gift||gift.type!=="gift")return;
+
+    if(gift.openingUntil>Date.now()){
+      const seconds=Math.ceil((gift.openingUntil-Date.now())/1000);
+      toast("Your gift is opening. "+seconds+" seconds remaining.");
+      return;
+    }
+
+    if(gift.openingUntil===0){
+      gift.openingUntil=Date.now()+GIFT_OPEN_MS;
+      toast("Your gift is opening. Come back in 10 seconds!");
+      renderBoard();
+      save();
+
+      setTimeout(()=>{
+        finishGiftOpening(gift.uid);
+      },GIFT_OPEN_MS+100);
+    }
+  }
+
+  function finishGiftOpening(uid){
+    const index=board().findIndex(cell=>
+      cell&&typeof cell==="object"&&cell.type==="gift"&&cell.uid===uid
+    );
+
+    if(index<0)return;
+
+    const gift=board()[index];
+
+    if(gift.openingUntil>Date.now()){
+      setTimeout(()=>finishGiftOpening(uid),gift.openingUntil-Date.now()+100);
+      return;
+    }
+
+    // Give the currency rewards when the box is opened.
+    state.energy=Math.min(state.maxEnergy,state.en.id===state.currentCustomer);
     toast("Order completed for "+customer.name+"! +"+reward+" coins");
 
     renderBoard();
